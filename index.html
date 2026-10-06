@@ -8,25 +8,26 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- SheetJS (xlsx-js-style: fork SheetJS dengan dukungan styling sel) -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
   <style>
     body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
-    @keyframes flashRed { 0%,100% { background-color: #2563eb; } 30%,70% { background-color: #dc2626; } }
+    @keyframes flashRed { 0%,100% { background-color: #6366f1; } 30%,70% { background-color: #f43f5e; } }
     .flash-red { animation: flashRed 0.8s ease; }
     .fade-in { animation: fadeIn .25s ease; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
     #ring { transition: stroke-dashoffset 1s ease; }
   </style>
 </head>
-<body class="bg-slate-100 min-h-screen text-slate-800">
+<body class="bg-slate-900 min-h-screen text-slate-200">
 
   <!-- Header navigasi nomor soal -->
-  <header id="navHeader" class="hidden sticky top-0 z-20 bg-white shadow">
+  <header id="navHeader" class="hidden sticky top-0 z-20 bg-slate-800 shadow-lg border-b border-slate-700">
     <div class="max-w-4xl mx-auto px-3 py-3">
       <div class="flex items-center justify-between mb-2">
-        <h1 class="font-bold text-slate-700 text-sm sm:text-base">Kuis Lokal <span id="phaseLabel" class="ml-2 text-xs font-medium px-2 py-0.5 rounded bg-slate-200"></span></h1>
+        <h1 class="font-bold text-slate-200 text-sm sm:text-base">Kuis Lokal <span id="phaseLabel" class="ml-2 text-xs font-medium px-2 py-0.5 rounded bg-slate-700 text-slate-400"></span></h1>
         <div class="flex gap-2">
-          <button id="btnFinish" class="text-xs sm:text-sm px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700">Selesai</button>
-          <button id="btnExit" class="text-xs sm:text-sm px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300">Keluar</button>
+          <button id="btnFinish" class="text-xs sm:text-sm px-3 py-1.5 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 transition">Selesai</button>
+          <button id="btnExit" class="text-xs sm:text-sm px-3 py-1.5 rounded-lg bg-slate-700 text-slate-200 border border-slate-600 hover:bg-slate-600 transition">Keluar</button>
         </div>
       </div>
       <div id="navBoxes" class="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto"></div>
@@ -36,95 +37,109 @@
   <main class="max-w-4xl mx-auto p-4">
 
     <!-- Layar Sambutan -->
-    <section id="screenStart" class="fade-in bg-white rounded-2xl shadow-lg p-6 sm:p-10 mt-10 text-center">
-      <h2 class="text-3xl font-bold mb-2">Simulasi Kuis</h2>
-      <p class="text-slate-500 mb-6">Unggah bank soal dalam format Excel (.xlsx) untuk memulai.</p>
+    <section id="screenStart" class="fade-in bg-slate-800 rounded-xl shadow-lg p-6 sm:p-10 mt-10 text-center">
+      <h2 class="text-3xl font-bold mb-2 text-slate-200">Simulasi Kuis</h2>
+      <p class="text-slate-400 mb-6">Unggah bank soal dalam format Excel (.xlsx) untuk memulai.</p>
 
-      <div id="resumeBox" class="hidden mb-6 p-4 rounded-xl bg-amber-50 border border-amber-200">
-        <p class="text-amber-800 mb-3">Ditemukan progres kuis yang belum selesai.</p>
+      <div id="resumeBox" class="hidden mb-6 p-4 rounded-xl bg-slate-700 border border-slate-600">
+        <p class="text-slate-200 mb-3">Ditemukan progres kuis yang belum selesai.</p>
         <div class="flex gap-2 justify-center">
-          <button id="btnResume" class="px-4 py-2 rounded-lg bg-amber-500 text-white hover:bg-amber-600">Lanjutkan</button>
-          <button id="btnDiscard" class="px-4 py-2 rounded-lg bg-slate-200 hover:bg-slate-300">Hapus Progres</button>
+          <button id="btnResume" class="px-4 py-2 rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 transition">Lanjutkan</button>
+          <button id="btnDiscard" class="px-4 py-2 rounded-lg bg-slate-700 text-slate-200 border border-slate-600 hover:bg-slate-600 transition">Hapus Progres</button>
         </div>
       </div>
 
-      <label for="fileInput" class="block cursor-pointer border-2 border-dashed border-blue-300 hover:border-blue-500 hover:bg-blue-50 rounded-xl p-8 transition">
-        <span class="block text-blue-700 font-semibold">📂 Unggah File Soal (.xlsx)</span>
-        <span id="fileInfo" class="block text-sm text-slate-500 mt-1">Klik untuk memilih file</span>
+      <label for="fileInput" class="block cursor-pointer border-2 border-dashed border-slate-600 hover:border-indigo-500 hover:bg-slate-700 rounded-xl p-8 transition">
+        <span class="block text-slate-200 font-semibold">📂 Unggah File Soal (.xlsx)</span>
+        <span id="fileInfo" class="block text-sm text-slate-400 mt-1">Klik untuk memilih file</span>
       </label>
       <input id="fileInput" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden">
-      <p id="fileError" class="hidden mt-3 text-red-600 text-sm"></p>
+      <p id="fileError" class="hidden mt-3 text-rose-500 text-sm"></p>
 
-      <button id="btnStart" class="hidden mt-6 px-8 py-3 rounded-xl bg-blue-700 text-white font-semibold hover:bg-blue-800 shadow">Mulai Kuis</button>
 
-      <p class="mt-6 text-sm text-slate-500">Belum punya format? <button id="btnTemplate" type="button" class="text-blue-600 underline">Unduh template-soal.xlsx</button></p>
+      <p class="mt-6 text-sm text-slate-400">Belum punya format? <button id="btnTemplate" type="button" class="text-indigo-500 hover:text-indigo-600 underline">Unduh template-soal.xlsx</button></p>
     </section>
 
-    <!-- Layar Pilihan Mode -->
-    <section id="screenMode" class="hidden fade-in bg-white rounded-2xl shadow-lg p-6 sm:p-10 mt-10 text-center">
-      <h2 class="text-2xl font-bold mb-2">Pilih Mode</h2>
-      <p class="text-slate-500 mb-6">Bagaimana Anda ingin mengerjakan kuis ini?</p>
-      <div class="grid sm:grid-cols-2 gap-4">
-        <button id="modeSantai" class="text-left p-5 rounded-xl border-2 border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50 transition">
-          <div class="text-lg font-bold text-emerald-700">☕ Mode Santai</div>
-          <p class="text-sm text-slate-600 mt-1">Pembahasan bisa dibuka saat mengerjakan (tombol <b>Pembahasan</b> atau <kbd class="px-1 bg-slate-200 rounded">Spasi</kbd>).</p>
-        </button>
-        <button id="modeSerius" class="text-left p-5 rounded-xl border-2 border-blue-300 hover:border-blue-600 hover:bg-blue-50 transition">
-          <div class="text-lg font-bold text-blue-800">🎯 Mode Serius</div>
-          <p class="text-sm text-slate-600 mt-1">Tertutup murni seperti CBT. Tidak ada pembahasan selama pengerjaan.</p>
-        </button>
+    <!-- Layar Dashboard Belajar -->
+    <section id="screenMode" class="hidden fade-in bg-slate-800 rounded-xl shadow-lg p-6 sm:p-10 mt-10 text-center">
+      <div id="dashCategories">
+        <h2 class="text-2xl font-bold mb-2 text-slate-200">Dashboard Belajar</h2>
+        <p class="text-slate-400 mb-6">Pilih kategori untuk memulai. <b>Sesi</b> = Mode Santai (ada pembahasan), <b>Test</b> = Mode Serius (tertutup).</p>
+        <div id="dashList" class="grid sm:grid-cols-2 gap-4"></div>
+        <button id="modeBack" class="mt-6 text-sm text-slate-400 hover:text-slate-200 underline transition">← Ganti File</button>
       </div>
-      <button id="modeBack" class="mt-6 text-sm text-slate-500 underline">← Kembali</button>
+      <div id="dashMateriPanel" class="hidden text-left">
+        <button id="btnDashMateriBack" class="mb-6 text-sm px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-200 transition">← Kembali ke Menu</button>
+        <h3 class="text-xl font-bold text-slate-200 mb-4 border-b border-slate-700 pb-2">📖 Materi Rangkuman</h3>
+        <div id="dashMateriText" class="text-slate-200 leading-relaxed whitespace-pre-line text-justify"></div>
+      </div>
     </section>
 
     <!-- Fase Kuis & Review (kartu soal) -->
     <section id="screenQuestion" class="hidden fade-in mt-4">
-      <div class="bg-white rounded-2xl shadow-lg p-5 sm:p-8">
-        <p id="qCounter" class="text-sm text-slate-500 mb-2"></p>
-        <h2 id="qText" class="text-lg sm:text-xl font-semibold mb-5 whitespace-pre-line"></h2>
+      <div class="bg-slate-800 rounded-xl shadow-lg p-5 sm:p-8">
+        <p id="qCounter" class="text-sm text-slate-400 mb-2"></p>
+        <div class="w-full h-2 bg-slate-700 rounded-full mt-3 mb-5">
+          <div id="qProgress" class="h-full bg-emerald-500 rounded-full transition-all duration-500 ease-out" style="width: 0%"></div>
+        </div>
+        <h2 id="qText" class="text-lg sm:text-xl font-semibold mb-5 whitespace-pre-line text-slate-200"></h2>
         <div id="qOptions" class="space-y-3"></div>
-        <div id="explainBox" class="hidden mt-6 p-4 rounded-xl bg-blue-50 border border-blue-200">
-          <h3 class="font-semibold text-blue-800 mb-1">Pembahasan</h3>
-          <p id="explainText" class="text-slate-700 whitespace-pre-line"></p>
+        <div id="explainBox" class="hidden mt-6 p-4 rounded-xl bg-slate-800 shadow-lg border border-slate-700">
+          <h3 class="font-semibold text-indigo-500 mb-1">Pembahasan</h3>
+          <p id="explainText" class="text-slate-200 whitespace-pre-line"></p>
         </div>
       </div>
 
       <div id="quizControls" class="flex justify-between gap-2 mt-4">
-        <button id="btnPrev" class="px-4 py-2.5 rounded-lg bg-slate-300 hover:bg-slate-400">← Sebelumnya</button>
+        <button id="btnPrev" class="px-4 py-2.5 rounded-lg bg-slate-700 text-slate-200 border border-slate-600 hover:bg-slate-600 transition">← Sebelumnya</button>
         <div class="flex gap-2">
-          <button id="btnHint" class="hidden px-4 py-2.5 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 font-medium">Pembahasan</button>
-          <button id="btnSkip" class="px-4 py-2.5 rounded-lg bg-amber-400 hover:bg-amber-500 font-medium">Lewati</button>
-          <button id="btnNext" class="px-6 py-2.5 rounded-lg bg-blue-700 text-white hover:bg-blue-800 font-medium">Next →</button>
+          <button id="btnMateri" class="hidden px-4 py-2.5 rounded-lg bg-slate-700 text-slate-200 hover:bg-slate-600 transition font-medium">📖 Materi</button>
+          <button id="btnHint" class="hidden px-4 py-2.5 rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 transition font-medium">Pembahasan</button>
+          <button id="btnSkip" class="px-4 py-2.5 rounded-lg bg-slate-700 text-slate-200 border border-slate-600 hover:bg-slate-600 transition font-medium">Lewati</button>
+          <button id="btnNext" class="px-6 py-2.5 rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 transition font-medium">Next →</button>
         </div>
       </div>
-      <p id="kbdHint" class="text-center text-xs text-slate-400 mt-3">Tekan A–E untuk memilih, ← → untuk pindah soal.</p>
+      <p id="kbdHint" class="text-center text-xs text-slate-400 mt-3">Tekan A–D untuk memilih, ← → untuk pindah soal.</p>
     </section>
 
     <!-- Layar Preview -->
-    <section id="screenPreview" class="hidden fade-in mt-4 bg-white rounded-2xl shadow-lg p-6 sm:p-10 text-center">
-      <h2 class="text-2xl font-bold mb-6">Ringkasan Hasil</h2>
+    <section id="screenPreview" class="hidden fade-in mt-4 bg-slate-800 rounded-xl shadow-lg p-6 sm:p-10 text-center">
+      <h2 class="text-2xl font-bold mb-6 text-slate-200">Ringkasan Hasil</h2>
       <div class="relative w-48 h-48 mx-auto">
         <svg viewBox="0 0 120 120" class="w-full h-full -rotate-90">
-          <circle cx="60" cy="60" r="52" fill="none" stroke="#e2e8f0" stroke-width="12"/>
-          <circle id="ring" cx="60" cy="60" r="52" fill="none" stroke="#16a34a" stroke-width="12" stroke-linecap="round" stroke-dasharray="326.73" stroke-dashoffset="326.73"/>
+          <circle cx="60" cy="60" r="52" fill="none" stroke="#334155" stroke-width="12"/>
+          <circle id="ring" cx="60" cy="60" r="52" fill="none" stroke="#10b981" stroke-width="12" stroke-linecap="round" stroke-dasharray="326.73" stroke-dashoffset="326.73"/>
         </svg>
         <div class="absolute inset-0 flex flex-col items-center justify-center">
-          <span id="scorePct" class="text-4xl font-bold">0%</span>
-          <span class="text-xs text-slate-500">Skor</span>
+          <span id="scorePct" class="text-4xl font-bold text-slate-200">0%</span>
+          <span class="text-xs text-slate-400">Skor</span>
         </div>
       </div>
       <div class="grid grid-cols-3 gap-3 mt-8 max-w-md mx-auto">
-        <div class="rounded-xl bg-green-100 p-3"><div id="sumCorrect" class="text-2xl font-bold text-green-700">0</div><div class="text-xs text-green-800">Benar</div></div>
-        <div class="rounded-xl bg-red-100 p-3"><div id="sumWrong" class="text-2xl font-bold text-red-700">0</div><div class="text-xs text-red-800">Salah</div></div>
-        <div class="rounded-xl bg-slate-200 p-3"><div id="sumSkip" class="text-2xl font-bold text-slate-700">0</div><div class="text-xs text-slate-700">Dilewati</div></div>
+        <div class="rounded-xl bg-slate-700 border border-slate-600 p-3"><div id="sumCorrect" class="text-2xl font-bold text-emerald-500">0</div><div class="text-xs text-slate-400">Benar</div></div>
+        <div class="rounded-xl bg-slate-700 border border-slate-600 p-3"><div id="sumWrong" class="text-2xl font-bold text-rose-500">0</div><div class="text-xs text-slate-400">Salah</div></div>
+        <div class="rounded-xl bg-slate-700 border border-slate-600 p-3"><div id="sumSkip" class="text-2xl font-bold text-slate-200">0</div><div class="text-xs text-slate-400">Dilewati</div></div>
       </div>
-      <p class="text-sm text-slate-500 mt-6">Klik nomor soal di atas untuk langsung membuka pembahasannya.</p>
+      <p class="text-sm text-slate-400 mt-6">Klik nomor soal di atas untuk langsung membuka pembahasannya.</p>
       <div class="flex flex-wrap justify-center gap-3 mt-4">
-        <button id="btnReview" class="px-6 py-3 rounded-xl bg-blue-700 text-white font-semibold hover:bg-blue-800">Mulai Review dari Soal 1</button>
-        <button id="btnRestart" class="px-6 py-3 rounded-xl bg-slate-200 hover:bg-slate-300">Kembali ke Awal</button>
+        <button id="btnReview" class="px-6 py-3 rounded-xl bg-indigo-500 text-white font-semibold hover:bg-indigo-600 transition">Mulai Review dari Soal 1</button>
+        <button id="btnRestart" class="px-6 py-3 rounded-xl bg-slate-700 text-slate-200 border border-slate-600 hover:bg-slate-600 transition">Kembali ke Awal</button>
       </div>
     </section>
   </main>
+
+  <!-- Bottom Sheet Referensi Materi -->
+  <div id="materiBackdrop" class="hidden fixed inset-0 bg-black/60 z-40"></div>
+  <div id="materiSheet" role="dialog" aria-modal="true" aria-labelledby="materiTitle" class="fixed bottom-0 left-0 w-full bg-slate-800 rounded-t-2xl p-6 z-50 transform translate-y-full transition-transform duration-300 shadow-lg border-t border-slate-700 max-h-[70vh] overflow-y-auto">
+    <div class="max-w-4xl mx-auto">
+      <div class="flex items-center justify-between mb-3">
+        <h3 id="materiTitle" class="text-lg font-bold text-slate-200">📖 Referensi Materi</h3>
+        <button id="btnMateriClose" class="px-4 py-1.5 rounded-lg bg-slate-700 text-slate-200 hover:bg-slate-600 transition text-sm">Tutup</button>
+      </div>
+      <p id="materiText" class="text-slate-200 whitespace-pre-line"></p>
+      <p class="text-xs text-slate-400 mt-4">Tekan M atau Esc untuk menutup.</p>
+    </div>
+  </div>
 
   <script src="script.js"></script>
 </body>

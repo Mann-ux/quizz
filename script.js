@@ -1,6 +1,6 @@
 /* Kuis Lokal - Vanilla JS */
 const STORAGE_KEY = 'quizSimState_v1';
-const LETTERS = ['A', 'B', 'C', 'D', 'E'];
+const LETTERS = ['A', 'B', 'C', 'D'];
 const NEXT_DELAY = 800; // ms (< 1 detik)
 
 const $ = (id) => document.getElementById(id);
@@ -8,7 +8,7 @@ const el = {
   navHeader: $('navHeader'), navBoxes: $('navBoxes'), phaseLabel: $('phaseLabel'),
   screenStart: $('screenStart'), screenQuestion: $('screenQuestion'), screenPreview: $('screenPreview'),
   fileInput: $('fileInput'), fileInfo: $('fileInfo'), fileError: $('fileError'),
-  btnStart: $('btnStart'), resumeBox: $('resumeBox'),
+  resumeBox: $('resumeBox'),
   qCounter: $('qCounter'), qText: $('qText'), qOptions: $('qOptions'),
   explainBox: $('explainBox'), explainText: $('explainText'),
   btnPrev: $('btnPrev'), btnNext: $('btnNext'), btnSkip: $('btnSkip'),
@@ -39,7 +39,7 @@ function loadSave() {
 }
 
 // ===== XLSX (SheetJS) =====
-const HEADERS = ['Pertanyaan', 'Opsi A', 'Opsi B', 'Opsi C', 'Opsi D', 'Opsi E', 'Kunci', 'Pembahasan'];
+const HEADERS = ['Kategori', 'Materi', 'Pertanyaan', 'Opsi A', 'Opsi B', 'Opsi C', 'Opsi D', 'Kunci', 'Pembahasan'];
 const norm = (s) => String(s).trim().toLowerCase().replace(/\s+/g, ' ');
 const EXPECTED = HEADERS.map(norm);
 
@@ -67,14 +67,16 @@ function rowsToQuestions(objs) {
   rows.forEach((r, n) => {
     const get = (h) => String(r[idx[h]] ?? '').trim();
     const text = get('pertanyaan');
+    const category = get('kategori');
     const key = get('kunci').toUpperCase();
-    const opts = ['opsi a', 'opsi b', 'opsi c', 'opsi d', 'opsi e']
+    const opts = ['opsi a', 'opsi b', 'opsi c', 'opsi d']
       .map((h, i) => ({ orig: i, text: get(h) })).filter(o => o.text !== '');
+    if (!category) throw new Error(`Baris ${n + 2}: kategori kosong.`);
     if (!text) throw new Error(`Baris ${n + 2}: pertanyaan kosong.`);
     if (opts.length < 2) throw new Error(`Baris ${n + 2}: minimal 2 opsi jawaban.`);
     const keyIdx = LETTERS.indexOf(key);
     if (keyIdx === -1 || !opts.some(o => o.orig === keyIdx)) throw new Error(`Baris ${n + 2}: kunci "${key}" tidak valid.`);
-    out.push({ text, opts, keyIdx, explanation: get('pembahasan') });
+    out.push({ category, material: get('materi'), text, opts, keyIdx, explanation: get('pembahasan') });
   });
   return out;
 }
@@ -106,7 +108,6 @@ function buildQuiz(raw) {
 el.fileInput.addEventListener('change', (e) => {
   const file = e.target.files[0];
   pendingQuestions = null;
-  el.btnStart.classList.add('hidden');
   el.fileError.classList.add('hidden');
   if (!file) return;
   if (typeof XLSX === 'undefined') return showFileError('Library SheetJS gagal dimuat (cek koneksi internet).');
@@ -116,7 +117,8 @@ el.fileInput.addEventListener('change', (e) => {
     try {
       pendingQuestions = rowsToQuestions(parseXLSX(reader.result));
       el.fileInfo.textContent = `✓ ${file.name} — ${pendingQuestions.length} soal terdeteksi`;
-      el.btnStart.classList.remove('hidden');
+      selectingMode = true; // tampilkan Dashboard Belajar
+      render();
     } catch (err) { showFileError(err.message || 'File tidak dapat dibaca.'); }
   };
   reader.onerror = () => showFileError('Gagal membaca file.');
@@ -128,8 +130,9 @@ function downloadTemplate() {
   if (typeof XLSX === 'undefined') return alert('Library SheetJS gagal dimuat (cek koneksi internet).');
   const data = [
     HEADERS,
-    ['Apa ibu kota Indonesia?', 'Bandung', 'Jakarta', 'Surabaya', 'Medan', 'Makassar', 'B', 'Jakarta adalah ibu kota Indonesia saat ini, pusat pemerintahan dan ekonomi.'],
-    ['Berapakah hasil dari 7 x 8?', '54', '56', '58', '64', '48', 'B', '7 x 8 = 56. Cara cepat: 7 x 10 - 7 x 2 = 70 - 14 = 56.'],
+    ['Pre-test', '', 'Apa ibu kota Indonesia?', 'Bandung', 'Jakarta', 'Surabaya', 'Medan', 'B', 'Jakarta adalah ibu kota Indonesia saat ini, pusat pemerintahan dan ekonomi.'],
+    ['Sesi 1', 'Perkalian adalah penjumlahan berulang. Contoh: 7 x 8 = 7 dijumlahkan 8 kali = 56.', 'Berapakah hasil dari 7 x 8?', '54', '56', '58', '64', 'B', '7 x 8 = 56. Cara cepat: 7 x 10 - 7 x 2 = 70 - 14 = 56.'],
+    ['Final Test', '', 'Berapakah hasil dari 9 x 6?', '54', '56', '63', '45', 'A', '9 x 6 = 54.'],
   ];
   const ws = XLSX.utils.aoa_to_sheet(data);
   // Header: bold + latar abu-abu muda (butuh build SheetJS dengan dukungan style)
@@ -157,23 +160,72 @@ function showFileError(msg) {
   el.fileError.classList.remove('hidden');
 }
 
-el.btnStart.addEventListener('click', () => {
-  if (!pendingQuestions) return;
-  selectingMode = true;
-  render();
-});
+// Mode otomatis: kategori berisi "sesi" -> Santai; "test" -> Serius (default Serius)
+function modeFor(cat) {
+  const c = cat.toLowerCase();
+  if (c.includes('sesi')) return 'santai';
+  return 'serius';
+}
 
-function startWithMode(mode) {
-  state = buildQuiz(pendingQuestions);
-  state.mode = mode;
+function renderDashboard() {
+  const list = $('dashList');
+  list.innerHTML = '';
+  
+  // Pastikan panel kategori muncul dan panel bacaan materi sembunyi
+  $('dashCategories').classList.remove('hidden');
+  $('dashMateriPanel').classList.add('hidden');
+  
+  // Tombol "Baca Materi Rangkuman" global
+  const hasMat = (q) => String(q.material || '').trim() !== '';
+  const firstGlobalMat = pendingQuestions.find(hasMat);
+  if (firstGlobalMat) {
+    const btnMat = document.createElement('button');
+    btnMat.className = 'sm:col-span-2 text-center p-4 rounded-xl border border-amber-600 bg-amber-600 text-white transition hover:bg-amber-700 hover:-translate-y-0.5 shadow-lg font-bold text-lg';
+    btnMat.textContent = '📚 Baca Materi Rangkuman';
+    btnMat.addEventListener('click', () => {
+      $('dashCategories').classList.add('hidden');
+      $('dashMateriPanel').classList.remove('hidden');
+      $('dashMateriText').textContent = firstGlobalMat.material.trim();
+    });
+    list.appendChild(btnMat);
+  }
+
+  const cats = [...new Set(pendingQuestions.map(q => q.category))]; // urutan kemunculan di Excel
+  cats.forEach(cat => {
+    const n = pendingQuestions.filter(q => q.category === cat).length;
+    const santai = modeFor(cat) === 'santai';
+    const b = document.createElement('button');
+    b.className = 'text-left p-5 rounded-xl border border-slate-700 bg-indigo-500 text-white transition hover:bg-indigo-600 hover:-translate-y-0.5 shadow-lg';
+    b.innerHTML = '<div class="text-lg font-bold"></div><p class="text-sm text-indigo-100 mt-1"></p>';
+    b.children[0].textContent = (santai ? '☕ ' : '🎯 ') + cat;
+    b.children[1].textContent = `${n} soal · ${santai ? 'Mode Santai' : 'Mode Serius'}`;
+    b.addEventListener('click', () => startCategory(cat));
+    list.appendChild(b);
+  });
+}
+
+function startCategory(cat) {
+  const subset = pendingQuestions.filter(q => q.category === cat);
+  if (!subset.length) return;
+  state = buildQuiz(subset);
+  state.mode = modeFor(cat);
+  state.category = cat;
+  // Materi global: Materi pertama di kategori ini; bila kategori tidak punya (mis. Pre-test/Final Test),
+  // pakai Materi pertama yang ditemukan di seluruh file.
+  const hasMat = (q) => String(q.material || '').trim() !== '';
+  const firstMat = subset.find(hasMat) || pendingQuestions.find(hasMat);
+  state.globalMateri = firstMat ? String(firstMat.material).trim() : '';
+  globalMateri = state.globalMateri;
   selectingMode = false;
   hintOpen = false; lastIdx = -1;
   save();
   render();
 }
-$('modeSantai').addEventListener('click', () => startWithMode('santai'));
-$('modeSerius').addEventListener('click', () => startWithMode('serius'));
-$('modeBack').addEventListener('click', () => { selectingMode = false; render(); });
+$('modeBack').addEventListener('click', () => exitToStart(true, true));
+$('btnDashMateriBack').addEventListener('click', () => {
+  $('dashMateriPanel').classList.add('hidden');
+  $('dashCategories').classList.remove('hidden');
+});
 
 $('btnResume').addEventListener('click', () => { state = loadSave(); if (state) render(); });
 $('btnDiscard').addEventListener('click', () => { clearSave(); el.resumeBox.classList.add('hidden'); });
@@ -188,11 +240,17 @@ function show(screen) {
 }
 
 function render() {
-  if (!state) { show(selectingMode ? 'mode' : 'start'); if (!selectingMode) checkResume(); return; }
+  if (!state) {
+    if (selectingMode && pendingQuestions) renderDashboard(); else selectingMode = false;
+    show(selectingMode ? 'mode' : 'start'); if (!selectingMode) checkResume(); return;
+  }
   show(state.phase === 'preview' ? 'preview' : state.phase);
+  globalMateri = state.globalMateri || '';
+  closeMateri();
+  updateMateriButton();
   renderNav();
   $('btnFinish').classList.toggle('hidden', state.phase !== 'quiz');
-  el.phaseLabel.textContent = { quiz: 'Kuis', preview: 'Hasil', review: 'Review' }[state.phase];
+  el.phaseLabel.textContent = (state.category ? state.category + ' · ' : '') + { quiz: 'Kuis', preview: 'Hasil', review: 'Review' }[state.phase];
   if (state.phase === 'preview') renderPreview();
   else renderQuestion();
   window.scrollTo({ top: 0 });
@@ -212,11 +270,11 @@ function renderNav() {
     b.textContent = i + 1;
     const st = status(i);
     const color = {
-      empty: 'bg-slate-200 text-slate-700', answered: 'bg-blue-900 text-white', skip: 'bg-slate-300 text-slate-700',
-      correct: 'bg-green-500 text-white', wrong: 'bg-red-500 text-white',
+      empty: 'bg-slate-700 border border-slate-600 text-slate-200', answered: 'bg-indigo-500 border border-indigo-500 text-white', skip: 'bg-slate-700 border border-slate-600 text-slate-400',
+      correct: 'bg-emerald-500 border border-emerald-500 text-white', wrong: 'bg-rose-500 border border-rose-500 text-white',
     }[st];
-    const active = (state.phase !== 'preview' && i === state.current) ? 'ring-4 ring-offset-1 ring-amber-400 border-2 border-black' : 'border border-transparent';
-    b.className = `w-9 h-9 rounded-md text-sm font-semibold transition hover:scale-110 ${color} ${active}`;
+    const active = (state.phase !== 'preview' && i === state.current) ? 'ring-2 ring-inset ring-indigo-300' : '';
+    b.className = `w-10 h-10 flex items-center justify-center rounded-md text-sm font-semibold transition-all ${color} ${active}`;
     b.title = `Soal ${i + 1}`;
     b.addEventListener('click', () => jumpTo(i));
     b.dataset.i = i;
@@ -238,22 +296,23 @@ function renderQuestion() {
   const i = state.current, q = state.questions[i], ans = state.answers[i];
   const review = state.phase === 'review';
   el.qCounter.textContent = `Soal ${i + 1} dari ${state.questions.length}`;
+  $('qProgress').style.width = `${((i + 1) / state.questions.length) * 100}%`;
   el.qText.textContent = q.text;
   el.qOptions.innerHTML = '';
   q.options.forEach((txt, k) => {
     const d = document.createElement(review ? 'div' : 'button');
-    let cls = 'w-full text-left flex items-start gap-3 p-3 sm:p-4 rounded-xl border-2 transition ';
+    let cls = 'w-full text-left flex items-start gap-3 p-3 sm:p-4 rounded-xl border-2 text-slate-200 transition ';
     let mark = '';
     if (review) {
-      if (k === q.correct) { cls += 'border-green-500 bg-green-50'; mark = '<span class="ml-auto text-green-600 font-bold">✓</span>'; }
-      else if (k === ans) { cls += 'border-red-500 bg-red-50'; mark = '<span class="ml-auto text-red-600 font-bold">✗</span>'; }
-      else cls += 'border-slate-200 bg-white';
+      if (k === q.correct) { cls += 'border-emerald-500 bg-slate-700'; mark = '<span class="ml-auto text-emerald-500 font-bold">✓</span>'; }
+      else if (k === ans) { cls += 'border-rose-500 bg-slate-700'; mark = '<span class="ml-auto text-rose-500 font-bold">✗</span>'; }
+      else cls += 'border-slate-600 bg-slate-700';
     } else {
-      cls += (k === ans) ? 'border-blue-600 bg-blue-50 cursor-pointer' : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-slate-50 cursor-pointer';
+      cls += (k === ans) ? 'bg-indigo-500/20 border-indigo-500 ring-1 ring-indigo-500 cursor-pointer' : 'bg-slate-800 border-slate-600 hover:bg-slate-700 cursor-pointer';
       d.addEventListener('click', () => selectOption(k));
     }
     d.className = cls;
-    d.innerHTML = `<span class="shrink-0 w-7 h-7 rounded-full bg-slate-200 text-sm font-bold flex items-center justify-center">${LETTERS[k]}</span><span class="flex-1"></span>${mark}`;
+    d.innerHTML = `<span class="shrink-0 w-7 h-7 rounded-full bg-slate-800 border border-slate-600 text-slate-200 text-sm font-bold flex items-center justify-center">${LETTERS[k]}</span><span class="flex-1"></span>${mark}`;
     d.children[1].textContent = txt;
     el.qOptions.appendChild(d);
   });
@@ -263,9 +322,10 @@ function renderQuestion() {
     el.explainText.textContent = q.explanation || 'Tidak ada pembahasan untuk soal ini.';
   }
   $('btnHint').classList.toggle('hidden', review || !isSantai());
+  $('btnMateri').classList.toggle('hidden', !currentMaterial());
   $('btnHint').textContent = hintOpen ? 'Sembunyikan' : 'Pembahasan';
   el.kbdHint.textContent = review ? 'Gunakan ← → atau Enter untuk berpindah soal.'
-    : 'Tekan A–E untuk memilih, ← → untuk pindah, Enter = Next' + (isSantai() ? ', Spasi = pembahasan.' : '.');
+    : 'Tekan A–D untuk memilih, ← → untuk pindah, Enter = Next' + (isSantai() ? ', Spasi = pembahasan.' : '.');
   // kontrol
   el.btnSkip.classList.toggle('hidden', review);
   el.kbdHint.classList.toggle('hidden', review && false);
@@ -278,7 +338,7 @@ function renderQuestion() {
   } else {
     el.btnNext.textContent = last ? 'Selesai' : 'Next →';
   }
-  el.btnNext.className = 'px-6 py-2.5 rounded-lg bg-blue-700 text-white hover:bg-blue-800 font-medium';
+  el.btnNext.className = 'px-6 py-2.5 rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 transition font-medium';
 }
 
 function renderPreview() {
@@ -295,6 +355,10 @@ function renderPreview() {
   ring.style.strokeDasharray = circ;
   ring.style.strokeDashoffset = circ;
   requestAnimationFrame(() => requestAnimationFrame(() => { ring.style.strokeDashoffset = circ * (1 - c / total); }));
+  
+  if (pct >= 75 && typeof confetti !== 'undefined') {
+    confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+  }
 }
 
 // ===== Aksi kuis =====
@@ -364,29 +428,70 @@ $('btnFinish').addEventListener('click', () => {
   goPreview();
 });
 $('btnReview').addEventListener('click', () => { state.phase = 'review'; state.current = 0; save(); render(); });
-$('btnRestart').addEventListener('click', exitToStart);
+$('btnRestart').addEventListener('click', () => exitToStart(false));
 $('btnExit').addEventListener('click', () => {
-  if (state.phase === 'quiz' && !confirm('Keluar ke layar awal? Progres tetap tersimpan dan bisa dilanjutkan.')) return;
+  if (state.phase === 'quiz' && !confirm('Keluar ke Dashboard? Progres tetap tersimpan dan bisa dilanjutkan.')) return;
   if (state.phase !== 'quiz') clearSave();
   exitToStart(true);
 });
 
-function exitToStart(keepSave) {
+// Kembali ke Dashboard bila file masih dimuat; fullReset = kembali ke layar unggah
+function exitToStart(keepSave, fullReset) {
   if (keepSave !== true && state && state.phase === 'preview') clearSave();
-  state = null; pendingQuestions = null; locked = false; selectingMode = false; hintOpen = false;
-  el.fileInput.value = ''; el.fileInfo.textContent = 'Klik untuk memilih file';
-  el.btnStart.classList.add('hidden'); el.fileError.classList.add('hidden');
+  state = null; locked = false; hintOpen = false;
+  if (fullReset || !pendingQuestions) {
+    pendingQuestions = null; selectingMode = false;
+    el.fileInput.value = ''; el.fileInfo.textContent = 'Klik untuk memilih file';
+    el.fileError.classList.add('hidden');
+  } else selectingMode = true;
   render();
 }
+
+// ===== Referensi Materi (Bottom Sheet) =====
+let globalMateri = '';
+let materiOpen = false;
+const currentMaterial = () => (globalMateri || '').trim();
+// Visibilitas tombol Materi HANYA bergantung pada isi globalMateri (tidak peduli mode/kategori)
+function updateMateriButton() {
+  $('btnMateri').classList.toggle('hidden', !currentMaterial());
+}
+function openMateri() {
+  const m = currentMaterial();
+  if (!state || state.phase === 'preview' || !m || locked) return;
+  $('materiText').textContent = m;
+  materiOpen = true;
+  if (document.activeElement) document.activeElement.blur();
+  $('materiBackdrop').classList.remove('hidden');
+  // paksa reflow agar transisi berjalan
+  void $('materiSheet').offsetHeight;
+  $('materiSheet').classList.remove('translate-y-full');
+  $('materiSheet').classList.add('translate-y-0');
+}
+function closeMateri() {
+  materiOpen = false;
+  $('materiSheet').classList.remove('translate-y-0');
+  $('materiSheet').classList.add('translate-y-full');
+  $('materiBackdrop').classList.add('hidden');
+}
+function toggleMateri() { materiOpen ? closeMateri() : openMateri(); }
+$('btnMateri').addEventListener('click', toggleMateri);
+$('btnMateriClose').addEventListener('click', closeMateri);
+$('materiBackdrop').addEventListener('click', closeMateri);
 
 // ===== Keyboard =====
 document.addEventListener('keydown', (e) => {
   if (!state || state.phase === 'preview' || e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key;
+  if (materiOpen) { // saat panel terbuka, hanya M / Esc yang aktif
+    if (k === 'm' || k === 'M' || k === 'Escape') { e.preventDefault(); closeMateri(); }
+    else if (k === 'Enter' || k === ' ') e.preventDefault();
+    return;
+  }
+  if ((k === 'm' || k === 'M') && !e.repeat) { e.preventDefault(); toggleMateri(); return; }
   if (k === 'Enter') { e.preventDefault(); if (!e.repeat) next(); }
   else if (k === ' ' || k === 'Spacebar') {
     e.preventDefault();
-    if (!e.repeat) { if (document.activeElement) document.activeElement.blur(); toggleHint(); }
+    if (isSantai() && !e.repeat) { if (document.activeElement) document.activeElement.blur(); toggleHint(); }
   }
   else if (k === 'ArrowRight') { e.preventDefault(); next(); }
   else if (k === 'ArrowLeft') { e.preventDefault(); prev(); }

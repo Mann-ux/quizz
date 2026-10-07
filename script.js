@@ -25,6 +25,8 @@ let selectingMode = false;   // sedang di layar pilihan mode
 let hintOpen = false;        // pembahasan terbuka (Mode Santai)
 let lastIdx = -1;            // untuk reset pembahasan saat pindah soal
 const isSantai = () => state && state.mode === 'santai';
+let isPembahasanGlobalAktif = false; // toggle Dashboard
+const hintEnabled = () => isSantai() || isPembahasanGlobalAktif;
 
 function save() {
   if (state) localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -116,6 +118,9 @@ el.fileInput.addEventListener('change', (e) => {
   reader.onload = () => {
     try {
       pendingQuestions = rowsToQuestions(parseXLSX(reader.result));
+      // Cari Materi pertama yang valid di SELURUH baris (bukan kosong, bukan "-")
+      const found = pendingQuestions.find(q => { const m = String(q.material || '').trim(); return m !== '' && m !== '-'; });
+      globalMateri = found ? String(found.material).trim() : '';
       el.fileInfo.textContent = `✓ ${file.name} — ${pendingQuestions.length} soal terdeteksi`;
       selectingMode = true; // tampilkan Dashboard Belajar
       render();
@@ -175,20 +180,21 @@ function renderDashboard() {
   $('dashCategories').classList.remove('hidden');
   $('dashMateriPanel').classList.add('hidden');
   
-  // Tombol "Baca Materi Rangkuman" global
-  const hasMat = (q) => String(q.material || '').trim() !== '';
-  const firstGlobalMat = pendingQuestions.find(hasMat);
-  if (firstGlobalMat) {
+  // Tombol "Baca Materi Rangkuman" global (di atas toggle & kategori)
+  const wrap = $('dashMateriBtnWrap');
+  wrap.innerHTML = '';
+  if (globalMateri) {
     const btnMat = document.createElement('button');
-    btnMat.className = 'sm:col-span-2 text-center p-4 rounded-xl border border-amber-600 bg-amber-600 text-white transition hover:bg-amber-700 hover:-translate-y-0.5 shadow-lg font-bold text-lg';
+    btnMat.className = 'w-full text-center p-4 rounded-xl border border-amber-600 bg-amber-600 text-white transition hover:bg-amber-700 hover:-translate-y-0.5 shadow-lg font-bold text-lg';
     btnMat.textContent = '📚 Baca Materi Rangkuman';
     btnMat.addEventListener('click', () => {
       $('dashCategories').classList.add('hidden');
       $('dashMateriPanel').classList.remove('hidden');
-      $('dashMateriText').textContent = firstGlobalMat.material.trim();
+      $('dashMateriText').textContent = globalMateri;
     });
-    list.appendChild(btnMat);
+    wrap.appendChild(btnMat);
   }
+  $('togglePembahasan').checked = isPembahasanGlobalAktif;
 
   const cats = [...new Set(pendingQuestions.map(q => q.category))]; // urutan kemunculan di Excel
   cats.forEach(cat => {
@@ -210,17 +216,15 @@ function startCategory(cat) {
   state = buildQuiz(subset);
   state.mode = modeFor(cat);
   state.category = cat;
-  // Materi global: Materi pertama di kategori ini; bila kategori tidak punya (mis. Pre-test/Final Test),
-  // pakai Materi pertama yang ditemukan di seluruh file.
-  const hasMat = (q) => String(q.material || '').trim() !== '';
-  const firstMat = subset.find(hasMat) || pendingQuestions.find(hasMat);
-  state.globalMateri = firstMat ? String(firstMat.material).trim() : '';
-  globalMateri = state.globalMateri;
+  // Materi global sudah dihitung saat parsing file (seluruh kategori)
+  state.globalMateri = globalMateri;
+  state.pembahasanGlobal = isPembahasanGlobalAktif;
   selectingMode = false;
   hintOpen = false; lastIdx = -1;
   save();
   render();
 }
+$('togglePembahasan').addEventListener('change', (e) => { isPembahasanGlobalAktif = e.target.checked; });
 $('modeBack').addEventListener('click', () => exitToStart(true, true));
 $('btnDashMateriBack').addEventListener('click', () => {
   $('dashMateriPanel').classList.add('hidden');
@@ -246,6 +250,7 @@ function render() {
   }
   show(state.phase === 'preview' ? 'preview' : state.phase);
   globalMateri = state.globalMateri || '';
+  if (typeof state.pembahasanGlobal === 'boolean') isPembahasanGlobalAktif = state.pembahasanGlobal;
   closeMateri();
   updateMateriButton();
   renderNav();
@@ -317,15 +322,15 @@ function renderQuestion() {
     el.qOptions.appendChild(d);
   });
 
-  el.explainBox.classList.toggle('hidden', !(review || (isSantai() && hintOpen)));
-  if (review || (isSantai() && hintOpen)) {
+  el.explainBox.classList.toggle('hidden', !(review || (hintEnabled() && hintOpen)));
+  if (review || (hintEnabled() && hintOpen)) {
     el.explainText.textContent = q.explanation || 'Tidak ada pembahasan untuk soal ini.';
   }
-  $('btnHint').classList.toggle('hidden', review || !isSantai());
+  $('btnHint').classList.toggle('hidden', review || !hintEnabled());
   $('btnMateri').classList.toggle('hidden', !currentMaterial());
   $('btnHint').textContent = hintOpen ? 'Sembunyikan' : 'Pembahasan';
   el.kbdHint.textContent = review ? 'Gunakan ← → atau Enter untuk berpindah soal.'
-    : 'Tekan A–D untuk memilih, ← → untuk pindah, Enter = Next' + (isSantai() ? ', Spasi = pembahasan.' : '.');
+    : 'Tekan A–D untuk memilih, ← → untuk pindah, Enter = Next' + (hintEnabled() ? ', Spasi = pembahasan.' : '.');
   // kontrol
   el.btnSkip.classList.toggle('hidden', review);
   el.kbdHint.classList.toggle('hidden', review && false);
@@ -417,7 +422,7 @@ el.btnPrev.addEventListener('click', prev);
 el.btnSkip.addEventListener('click', skip);
 $('btnHint').addEventListener('click', toggleHint);
 function toggleHint() {
-  if (locked || !state || state.phase !== 'quiz' || !isSantai()) return; // Mode Serius: dinonaktifkan
+  if (locked || !state || state.phase !== 'quiz' || !hintEnabled()) return; // dinonaktifkan bila bukan Sesi dan toggle OFF
   hintOpen = !hintOpen;
   renderQuestion();
 }
@@ -491,7 +496,7 @@ document.addEventListener('keydown', (e) => {
   if (k === 'Enter') { e.preventDefault(); if (!e.repeat) next(); }
   else if (k === ' ' || k === 'Spacebar') {
     e.preventDefault();
-    if (isSantai() && !e.repeat) { if (document.activeElement) document.activeElement.blur(); toggleHint(); }
+    if (hintEnabled() && !e.repeat) { if (document.activeElement) document.activeElement.blur(); toggleHint(); }
   }
   else if (k === 'ArrowRight') { e.preventDefault(); next(); }
   else if (k === 'ArrowLeft') { e.preventDefault(); prev(); }
